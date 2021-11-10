@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import fetch, { RequestInfo, RequestInit, Headers } from "node-fetch";
+import fetch, { RequestInfo, RequestInit } from "node-fetch";
 import { assert } from "console";
 
 export type ID = string;
@@ -22,7 +22,7 @@ export enum ChannelPermission {
     Write = "WRITE",
     Read = "READ",
     Manage = "MANAGE",
-    ll = "ALL",
+    All = "ALL",
 }
 
 export interface HubMember {
@@ -73,13 +73,15 @@ export interface Hub {
     mutes: ID[];
 }
 
+export interface MemberStatus {
+    member: ID;
+    banned: boolean;
+    muted: boolean;
+}
+
 export type Result<T> = {
     success?: T;
     error?: string;
-}
-
-interface SetPermission {
-    setting: PermissionSetting;
 }
 
 class MessagesAfterQuery {
@@ -135,7 +137,7 @@ export class HttpClient {
         const response = await fetch(url, init);
         const json = await response.json();
         const result: Result<T> = json as Result<T>;
-        if (result.success) {
+        if (result.success !== undefined) {
             return result.success;
         } else {
             throw new Error(result.error);
@@ -186,7 +188,7 @@ export class HttpClient {
 
     public async createHub(name?: string, description?: string): Promise<ID> {
         console.log("Creating hub " + name);
-        return await this.post(this.base_url + "/hub", {name: name, description: description});
+        return await this.post(this.base_url + "/hub", { name: name, description: description });
     }
 
     public async deleteHub(id: ID): Promise<string> {
@@ -226,17 +228,125 @@ export class HttpClient {
 
     public async createChannel(hub_id: ID, name?: string, description?: string): Promise<ID> {
         console.log("Creating channel " + name + " in hub " + hub_id);
-        return await this.post(this.base_url + "/channel/" + hub_id, {name: name, description: description});
+        return await this.post(this.base_url + "/channel/" + hub_id, { name: name, description: description });
+    }
+
+    public async getMember(hub_id: ID, member_id: ID): Promise<HubMember> {
+        console.log("Getting member " + member_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/member/" + hub_id + "/" + member_id);
+    }
+
+    public async getMemberStatus(hub_id: ID, member_id: ID): Promise<MemberStatus> {
+        console.log("Getting member status " + member_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/member/" + hub_id + "/" + member_id + "/status");
+    }
+
+    public async setMemberHubPermission(hub_id: ID, member_id: ID, permission: HubPermission, setting?: boolean): Promise<MemberStatus> {
+        console.log("Setting member permission " + permission + " for member " + member_id + " in hub " + hub_id);
+        return await this.put(this.base_url + "/member/" + hub_id + "/" + member_id + "/hub_permission/" + permission, JSON.stringify({ setting: setting }));
+    }
+
+    public async setMemberChannelPermission(hub_id: ID, member_id: ID, channel_id: ID, permission: ChannelPermission, setting?: boolean): Promise<MemberStatus> {
+        console.log("Setting member permission " + permission + " for member " + member_id + " in channel " + channel_id + " in hub " + hub_id);
+        return await this.put(this.base_url + "/member/" + hub_id + "/" + member_id + "/channel_permission/" + channel_id + "/" + permission, JSON.stringify({ setting: setting }));
+    }
+
+    public async getMemberHubPermission(hub_id: ID, member_id: ID, permission: HubPermission): Promise<boolean | undefined> {
+        console.log("Getting member permission " + permission + " for member " + member_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/member/" + hub_id + "/" + member_id + "/hub_permission/" + permission);
+    }
+
+    public async getMemberChannelPermission(hub_id: ID, member_id: ID, channel_id: ID, permission: ChannelPermission): Promise<boolean | undefined> {
+        console.log("Getting member permission " + permission + " for member " + member_id + " in channel " + channel_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/member/" + hub_id + "/" + member_id + "/channel_permission/" + channel_id + "/" + permission);
+    }
+
+    public async banMember(hub_id: ID, member_id: ID): Promise<string> {
+        console.log("Banning member " + member_id + " in hub " + hub_id);
+        return await this.post(this.base_url + "/member/" + hub_id + "/" + member_id + "/ban");
+    }
+
+    public async unbanMember(hub_id: ID, member_id: ID): Promise<string> {
+        console.log("Unbanning member " + member_id + " in hub " + hub_id);
+        return await this.post(this.base_url + "/member/" + hub_id + "/" + member_id + "/unban");
+    }
+
+    public async muteMember(hub_id: ID, member_id: ID): Promise<string> {
+        console.log("Muting member " + member_id + " in hub " + hub_id);
+        return await this.post(this.base_url + "/member/" + hub_id + "/" + member_id + "/mute");
+    }
+
+    public async unmuteMember(hub_id: ID, member_id: ID): Promise<string> {
+        console.log("Unmuting member " + member_id + " in hub " + hub_id);
+        return await this.post(this.base_url + "/member/" + hub_id + "/" + member_id + "/unmute");
+    }
+
+    public async kickMember(hub_id: ID, member_id: ID): Promise<string> {
+        console.log("Kicking member " + member_id + " in hub " + hub_id);
+        return await this.post(this.base_url + "/member/" + hub_id + "/" + member_id + "/kick");
+    }
+
+    public async sendMessage(hub_id: ID, channel_id: ID, message: string): Promise<ID> {
+        console.log("Sending message " + message + " in channel " + channel_id + " in hub " + hub_id);
+        return await this.post(this.base_url + "/message/" + hub_id + "/" + channel_id, { message: message });
+    }
+
+    public async getMessage(hub_id: ID, channel_id: ID, message_id: ID): Promise<Message> {
+        console.log("Getting message " + message_id + " in channel " + channel_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/message/" + hub_id + "/" + channel_id + "/" + message_id);
+    }
+
+    public async getMessagesAfter(hub_id: ID, channel_id: ID, from: ID, max: number): Promise<Message[]> {
+        console.log("Getting messages after " + from + " in channel " + channel_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/message/" + hub_id + "/" + channel_id + "/after", {
+            method: "GET",
+            headers: {
+                "Authorization": this.auth,
+                "Content-type": "application/json"
+            },
+            body: JSON.stringify({ from: from, max: max })
+        });
+    }
+
+    public async getMesssagesTimeRange(hub_id: ID, channel_id: ID, from: Date, to: Date, max: number, new_to_old: boolean): Promise<Message[]> {
+        console.log("Getting messages in time range " + from + " to " + to + " in channel " + channel_id + " in hub " + hub_id);
+        return await this.http(this.base_url + "/message/" + hub_id + "/" + channel_id + "/time_period", {
+            method: "GET",
+            headers: {
+                "Authorization": this.auth,
+                "Content-type": "application/json"
+            },
+            body: JSON.stringify({ from: from, to: to, max: max, new_to_old: new_to_old })
+        });
+    }
+
+    public async graphQL(query: string, variables?: any): Promise<any> {
+        console.log("Sending graphQL query.");
+        const response = await fetch(this.base_url + "/graphql", {
+            method: "POST",
+            headers: {
+                "Authorization": this.auth,
+                "Content-type": "application/json"
+            },
+            body: JSON.stringify({ query: query, variables: variables })
+        });
+
+        return await response.json();
     }
 }
 
 async function test() {
     const user_id = uuidv4();
+    const extra_user_id = uuidv4();
     console.log("User ID: " + user_id);
     const client = new HttpClient("http://127.0.0.1:8080/api", user_id);
+    const extra_client = new HttpClient("http://127.0.0.1:8080/api", extra_user_id);
+
     const hub_id = await client.createHub("test0");
     let hub = await client.getHub(hub_id);
     console.log("Hub name: " + hub.name + " description: " + hub.description);
+
+    const channel_id = Object.keys(hub.channels)[0];
 
     const hub_update = { name: "test1", description: "test2" };
     let hub_update_response = await client.updateHub(hub_id, hub_update);
@@ -244,6 +354,55 @@ async function test() {
 
     hub = await client.getHub(hub_id);
     console.log("Hub name: " + hub.name + " description: " + hub.description);
+
+    const graphql_query = `query{\nhub(id:"` + hub_id + `"){\nname\ndescription\n}\n}`;
+    let graphql_response = await client.graphQL(graphql_query);
+    assert(graphql_response.data.hub.name === "test1");
+
+    await extra_client.joinHub(hub_id);
+
+    const read_channels_perm = await client.getMemberHubPermission(hub_id, extra_user_id, HubPermission.Administrate);
+    const read_channel_perm = await client.getMemberChannelPermission(hub_id, extra_user_id, channel_id, ChannelPermission.Manage);
+    await client.setMemberHubPermission(hub_id, extra_user_id, HubPermission.ReadChannels, !read_channels_perm);
+    await client.setMemberChannelPermission(hub_id, extra_user_id, channel_id, ChannelPermission.Read, !read_channel_perm);
+    assert(await client.getMemberHubPermission(hub_id, extra_user_id, HubPermission.ReadChannels) !== read_channels_perm);
+    assert(await client.getMemberChannelPermission(hub_id, extra_user_id, channel_id, ChannelPermission.Read) !== read_channel_perm);
+    await client.setMemberChannelPermission(hub_id, extra_user_id, channel_id, ChannelPermission.Write, true);
+
+    const message_id = await extra_client.sendMessage(hub_id, channel_id, "test message");
+    await client.getMessage(hub_id, channel_id, message_id);
+
+    await client.muteMember(hub_id, extra_user_id);
+    try {
+        await extra_client.sendMessage(hub_id, channel_id, "test message");
+    } catch (e) {
+        console.log("Cannot send message when muted. (Good)");
+    }
+
+    await client.unmuteMember(hub_id, extra_user_id);
+    await extra_client.sendMessage(hub_id, channel_id, "another test message");
+
+    await client.kickMember(hub_id, extra_user_id);
+    try {
+        await extra_client.getHub(hub_id);
+    } catch (e) {
+        console.log("Cannot get hub after being kicked. (Good)");
+    }
+
+    await extra_client.joinHub(hub_id);
+    await extra_client.getHub(hub_id);
+
+    await client.banMember(hub_id, extra_user_id);
+    try {
+        await extra_client.getHub(hub_id);
+    } catch (e) {
+        console.log("Cannot get hub when banned. (Good)");
+    }
+    try {
+        await extra_client.joinHub(hub_id);
+    } catch (e) {
+        console.log("Cannot join hub when banned. (Good)");
+    }
 
     await client.leaveHub(hub_id);
     try {
@@ -254,8 +413,6 @@ async function test() {
 
     await client.joinHub(hub_id);
     hub = await client.getHub(hub_id);
-
-    const channel_id = Object.keys(hub.channels)[0];
     let channel = await client.getChannel(hub_id, channel_id);
     console.log("Channel name: " + channel.name + " description: " + channel.description);
 
